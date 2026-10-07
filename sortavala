@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Карта опор освещения — редактор</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
+<style>
+*{box-sizing:border-box}
+body{margin:0;font:14px system-ui,sans-serif;display:flex;flex-direction:column;height:100vh}
+header{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 12px;background:#1f2937;color:#fff}
+header input,header select,header button{padding:6px 8px;border-radius:6px;border:0;font-size:14px}
+button,.btn{background:#f59e0b;color:#111;cursor:pointer;font-weight:600;border:0;border-radius:6px;padding:6px 10px}
+button:disabled{opacity:.4;cursor:default}
+#map{flex:1}
+#status{margin-left:auto;font-weight:600}
+.ok{color:#86efac}.err{color:#fca5a5}.warn{color:#fde68a}
+#hint{position:absolute;z-index:999;top:64px;left:50%;transform:translateX(-50%);background:#111c;color:#fff;padding:8px 16px;border-radius:8px}
+#msg{position:absolute;z-index:999;top:70px;left:50%;transform:translateX(-50%);background:#fff;padding:18px 26px;border-radius:10px;box-shadow:0 4px 20px #0005;text-align:center;max-width:90%}
+.pop table{border-collapse:collapse;margin:6px 0}
+.pop td{padding:2px 8px 2px 0;vertical-align:middle}.pop td:first-child{color:#666}
+.pop input{width:100%;padding:3px 5px;border:1px solid #bbb;border-radius:4px}
+.row{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.row a,.row button{padding:5px 9px;font-size:13px}
+.row a{border-radius:6px;background:#2563eb;color:#fff!important;text-decoration:none}
+.gray{background:#e5e7eb!important}.red{background:#fca5a5!important}
+#legend{position:absolute;z-index:999;bottom:20px;left:10px;background:#fffd;padding:6px 10px;border-radius:8px;max-height:40vh;overflow:auto;font-size:12px}
+#legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px}
+.crosshair{cursor:crosshair!important}
+
+.note{display:inline-block;white-space:nowrap;background:#fffe;border:2px solid;border-radius:8px;padding:3px 8px;font-weight:600;font-size:14px;box-shadow:0 1px 4px #0004}
+.ltip{background:#fffe;border:1px solid #999;font-weight:600}
+@media(pointer:coarse){button,header select,header input{padding:10px 14px;font-size:16px}.pop input{padding:8px;font-size:16px}.row button,.row a{padding:10px 14px;font-size:15px}}
+#sip{position:absolute;z-index:999;right:10px;bottom:30px;background:#fffe;padding:8px 12px;border-radius:8px;max-height:50vh;overflow:auto;font-size:13px;max-width:290px}
+#sip i{display:inline-block;width:12px;height:12px;border-radius:50%;margin-right:6px}
+.sip-len{background:#fffe;border:1px solid #333;padding:0 4px;font:600 11px system-ui;color:#111;box-shadow:none}
+.sip-len:before{display:none}
+.hide-len .sip-len{display:none}
+#report{position:fixed;top:0;left:0;right:0;bottom:0;z-index:2000;background:#fff;overflow:auto;padding:16px 24px}
+#report[hidden]{display:none}
+#report table{border-collapse:collapse;margin:6px 0 16px;font-size:13px}
+#report th,#report td{border:1px solid #999;padding:3px 8px;text-align:left}
+#report th{background:#e5e7eb}
+#report .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+@media print{body>*:not(#report){display:none!important}body{display:block;height:auto}#report{position:static!important;overflow:visible!important;padding:0}.noprint{display:none!important}}
+html{-webkit-text-size-adjust:100%}
+body{height:100dvh;overscroll-behavior:none;-webkit-tap-highlight-color:transparent}
+#map{min-height:0;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+button,select,label{touch-action:manipulation}
+header{padding-left:max(12px,env(safe-area-inset-left));padding-right:max(12px,env(safe-area-inset-right));padding-top:max(8px,env(safe-area-inset-top))}
+@media(max-width:900px){
+ header{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch}
+ header>*{flex:none}
+ input,select{font-size:16px!important}
+ #legend{max-width:46vw;max-height:28vh;font-size:11px;bottom:calc(16px + env(safe-area-inset-bottom,0px))}
+ #sip{max-width:52vw;max-height:30vh;bottom:calc(26px + env(safe-area-inset-bottom,0px))}
+ #hint{width:90vw;font-size:13px}
+ #report{padding:12px}
+}
+</style>
+</head>
+<body>
+<header>
+  <button id="open">📂 Открыть Excel</button>
+  <button id="bUndo" disabled>↩ Отменить</button>
+  <button id="bRedo" disabled>↪ Вернуть</button>
+  <button id="bNear" disabled>📍 Ближайшая опора</button>
+  <button id="bMark" disabled>✅ Отметка работ</button>
+  <span id="markBox" hidden><select id="stageSel"></select> <input type="date" id="markDate"></span>
+  <button id="bRep" disabled>📄 Отчёт</button>
+  <input id="q" placeholder="Поиск…" size="18">
+  <select id="colorBy"><option value="">Цвет: один</option></select>
+  <button id="add" disabled>➕ Опора</button>
+  <button id="bNote" disabled>📌 Пометка</button>
+  <button id="bLine" disabled>〰 Линия</button>
+  <button id="bFree" disabled>🖊 От руки</button>
+  <select id="pen"><option value="#e11d48">🔴 Красный</option><option value="#2563eb">🔵 Синий</option><option value="#16a34a">🟢 Зелёный</option><option value="#f59e0b">🟠 Оранжевый</option><option value="#111827">⚫ Чёрный</option><option value="#9333ea">🟣 Фиолетовый</option></select>
+  <button id="bSip" disabled>⚡ Схема СИП</button>
+  <span id="spanBox" hidden>макс. пролёт <input id="span" type="number" value="100" min="20" step="10" style="width:70px"> м · <label><input type="checkbox" id="lenLbl" checked> подписи</label> <button id="bEdge">🔗 Связь</button> <button id="bAuto" class="gray" hidden>↺ К авто</button></span>
+  <button id="dl" hidden>⬇ Скачать Excel</button>
+  <span id="info"></span>
+  <span id="status"></span>
+</header>
+<div id="map"></div>
+<div id="hint" hidden></div>
+<div id="msg">Нажмите <b>«Открыть Excel»</b> и выберите файл с опорами.<br>Правки на карте будут сразу сохраняться в этот же файл.<br><small>Нужен Chrome или Edge на компьютере. Закройте файл в самом Excel.</small></div>
+<div id="legend" hidden></div>
+<div id="sip" hidden></div>
+<div id="report" hidden>
+  <div class="bar noprint"><b>Отчёт о работах</b> с <input type="date" id="repFrom"> по <input type="date" id="repTo">
+    <button id="repXls">📋 В Excel</button><button id="repPrint" class="gray">🖨 Печать / PDF</button><button id="repClose" class="gray">✕ Закрыть</button></div>
+  <div id="repBody"></div>
+</div>
+<input id="file" type="file" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" hidden>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+if(!Element.prototype.replaceChildren)Element.prototype.replaceChildren=function(){this.textContent='';this.append.apply(this,arguments)};
+const $=id=>document.getElementById(id);
+const map=L.map('map',{preferCanvas:true}).setView([61.70,30.69],13);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map);
+const group=L.layerGroup().addTo(map);
+const PAL=['#e6194b','#3cb44b','#4363d8','#f58231','#911eb4','#42d4f4','#f032e6','#bfef45','#9a6324','#800000','#469990','#808000'];
+let wb,sheetName,handle=null,hdr=[],hl,hn,poles=[],mode=null,target=null,timer=null,dirty=false,hist=[],redo=[],fileName='';
+const num=v=>{const n=parseFloat(String(v).replace(',','.'));return isNaN(n)?null:n};
+const find=(keys)=>hdr.find(h=>keys.includes(String(h).trim().toLowerCase()));
+function status(t,c){$('status').textContent=t;$('status').className=c||''}
+
+// ---------- открытие ----------
+$('open').onclick=async()=>{
+  if(window.showOpenFilePicker){
+    try{
+      const [h]=await showOpenFilePicker({types:[{description:'Excel',accept:{'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':['.xlsx']}}]});
+      if(await h.requestPermission({mode:'readwrite'})!=='granted'){status('Нет разрешения на запись','err');return}
+      handle=h;load(await (await h.getFile()).arrayBuffer());
+    }catch(e){if(e.name!=='AbortError')status('Ошибка: '+e.message,'err')}
+  }else $('file').click();
+};
+$('file').onchange=async e=>{handle=null;fileName=e.target.files[0].name;load(await e.target.files[0].arrayBuffer());
+  status('Автосохранение недоступно в этом браузере — используйте «Скачать Excel»','warn');$('dl').hidden=false};
+
+function load(buf){
+  wb=XLSX.read(buf,{type:'array'});sheetName=wb.SheetNames[0];
+  const ws=wb.Sheets[sheetName];
+  hdr=XLSX.utils.sheet_to_json(ws,{header:1,defval:''})[0].map(String);
+  hl=find(['lat','latitude','широта']);hn=find(['lon','lng','longitude','долгота']);
+  if(!hl||!hn){alert('Нужны столбцы «Широта» и «Долгота»');return}
+  poles=XLSX.utils.sheet_to_json(ws,{defval:''}).map(r=>({r})).filter(p=>num(p.r[hl])!=null&&num(p.r[hn])!=null);
+  poles.forEach(p=>{p.r[hl]=num(p.r[hl]);p.r[hn]=num(p.r[hn])});
+  WCOLS.forEach(c=>{if(!hdr.includes(c))hdr.push(c)});poles.forEach(p=>WCOLS.forEach(c=>{if(p.r[c]===undefined)p.r[c]=''}));
+  const keep=['Тип метки','Название'].filter(c=>hdr.includes(c));
+  $('colorBy').innerHTML='<option value="">Цвет: один</option><option value="@stage">Этап работ</option>'+hdr.filter(c=>c!==hl&&c!==hn&&!isWorkCol(c)).map(c=>`<option>${c}</option>`).join('');
+  if(keep.length)$('colorBy').value=keep[0];
+  annots=[];sipSheet=wb.SheetNames.includes('Схема СИП');manualEdges=null;
+  if(sipSheet){const rr=XLSX.utils.sheet_to_json(wb.Sheets['Схема СИП'],{defval:''}).map(r=>[String(r['От опоры']).trim(),String(r['До опоры']).trim()]).filter(e=>e[0]&&e[1]);if(rr.length)manualEdges=rr}
+  if(wb.SheetNames.includes('Пометки'))annots=XLSX.utils.sheet_to_json(wb.Sheets['Пометки'],{defval:''}).map(r=>({type:r['Тип']==='пометка'?'note':'line',color:r['Цвет']||'#e11d48',text:String(r['Текст']),pts:String(r['Координаты']).split(';').map(s=>s.split(',').map(Number)).filter(p=>p.length===2&&!p.some(isNaN))})).filter(a=>a.pts.length);
+  $('msg').hidden=true;['add','bNote','bLine','bFree','bSip','bNear','bMark','bRep'].forEach(i=>$(i).disabled=false);
+  draw(true);renderAnnots();hist=[snap()];redo=[];updUndo();checkBackup();
+  if(handle)status('✓ Файл открыт, правки сохраняются автоматически','ok');
+}
+
+// ---------- сохранение ----------
+function save(noHist){if(noHist!==true)pushHist();if(!handle)backup();clearTimeout(timer);status('Сохранение…','warn');timer=setTimeout(doSave,400)}
+async function doSave(){
+  try{
+    const ws=XLSX.utils.json_to_sheet(poles.map(p=>p.r),{header:hdr});
+    ws['!cols']=hdr.map(()=>({wch:22}));
+    wb.Sheets[sheetName]=ws;putAnnots();
+    const out=XLSX.write(wb,{type:'array',bookType:'xlsx'});
+    if(handle){
+      const w=await handle.createWritable();await w.write(out);await w.close();
+      status('✓ Сохранено '+new Date().toLocaleTimeString(),'ok');dirty=false;
+    }else{dirty=true;status('Есть несохранённые правки — нажмите «Скачать Excel»','warn')}
+  }catch(e){status('Не сохранено: '+e.message+' (закройте файл в Excel)','err')}
+}
+$('dl').onclick=async()=>{
+  const ws=XLSX.utils.json_to_sheet(poles.map(p=>p.r),{header:hdr});ws['!cols']=hdr.map(()=>({wch:22}));
+  wb.Sheets[sheetName]=ws;putAnnots();
+  const name=fileName||'опоры_освещения.xlsx';
+  try{
+    const out=XLSX.write(wb,{type:'array',bookType:'xlsx'});
+    const f=new File([out],name,{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    if(navigator.canShare&&navigator.canShare({files:[f]})){await navigator.share({files:[f],title:name});dirty=false;clearBackup();return}
+  }catch(e){if(e&&e.name==='AbortError')return}
+  XLSX.writeFile(wb,name);dirty=false;clearBackup();
+};
+
+// ---------- отрисовка ----------
+const isAnchor=p=>/анкер/i.test(String(p.r['Название']||''));
+function poleIcon(p,color){
+  const an=isAnchor(p),s=Math.round((COARSE?1.4:1)*(an?17:15));
+  const st=an?`width:${s}px;height:${s}px;background:${color};border:3px solid #111;box-sizing:border-box`
+    :`width:${s}px;height:${s}px;background:${color};border:2px solid #fff;border-radius:50%;box-sizing:border-box;box-shadow:0 0 0 1px #333`;
+  return L.divIcon({className:'',html:`<div style="${st}"></div>`,iconSize:[s,s],iconAnchor:[s/2,s/2],popupAnchor:[0,-s/2]});
+}
+function tpColors(){[...new Set(poles.map(sipKey).filter(Boolean))].sort().forEach((k,i)=>sipHue[k]=`hsl(${(i*137.5)%360},70%,42%)`)}
+function draw(fit){
+  group.clearLayers();tpColors();
+  const q=$('q').value.trim().toLowerCase(),by=$('colorBy').value,byTp=by==='Тип метки'||sipOn;
+  const vals=by?[...new Set(poles.map(p=>String(p.r[by])))]:[];
+  const col=v=>PAL[vals.indexOf(String(v))%PAL.length];
+  const shown=poles.filter(p=>!q||Object.values(p.r).some(v=>String(v).toLowerCase().includes(q)));
+  shown.forEach(p=>{
+    const c=byTp?sipColor(p):(by==='@stage'?stageColor(p):(by?col(p.r[by]):'#f59e0b'));
+    p.m=L.marker([p.r[hl],p.r[hn]],{icon:poleIcon(p,c),keyboard:false})
+      .bindPopup(()=>popupEl(p,false),{maxWidth:340,maxHeight:Math.round(innerHeight*0.7)}).addTo(group);
+    p.m.on('click',e=>{if(mode){L.DomEvent.stopPropagation(e);mapClick(e.latlng,p)}});
+  });
+  $('info').textContent=`Опор: ${shown.length} из ${poles.length}`;renderSip(shown);
+  const na=shown.filter(isAnchor).length;
+  const shapes=`<div style="margin-top:6px"><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#999;border:2px solid #fff;box-shadow:0 0 0 1px #333;margin-right:6px"></span>Стандартная (${shown.length-na})</div><div><span style="display:inline-block;width:13px;height:13px;background:#999;border:3px solid #111;box-sizing:border-box;margin-right:6px"></span>Анкерная (${na})</div>`;
+  let colors='';
+  if(by==='Тип метки'&&!sipOn){
+    const m={};shown.forEach(p=>{const k=sipKey(p);if(k)(m[k]=m[k]||{n:String(p.r[by]).trim().replace(/\s+/g,' '),c:0}).c++});
+    colors='<b>ТП</b>'+Object.keys(m).sort().map(k=>`<div><i style="background:${sipHue[k]}"></i>${esc(m[k].n)} (${m[k].c})</div>`).join('');
+  }else if(by==='@stage'&&!sipOn){colors=stageLegend(shown)}else if(by&&!sipOn)colors=`<b>${esc(by)}</b>`+vals.slice(0,40).map(v=>`<div><i style="background:${col(v)}"></i>${esc(v)||'—'}</div>`).join('');
+  const lg=$('legend');lg.hidden=false;lg.innerHTML=colors+shapes;
+  if((fit||q)&&shown.length)map.fitBounds(L.latLngBounds(shown.map(p=>[p.r[hl],p.r[hn]])),{padding:[40,40],maxZoom:18});
+}
+$('q').oninput=()=>draw(false);$('colorBy').onchange=()=>draw(false);
+
+// ---------- карточка ----------
+function el(tag,props={},kids=[]){const e=Object.assign(document.createElement(tag),props);kids.forEach(k=>e.append(k));return e}
+function popupEl(p,edit){
+  const root=el('div',{className:'pop'});
+  if(!edit&&p===nearP)root.append(el('div',{textContent:'📍 Ближайшая опора: '+Math.round(nearD)+' м от вас',style:'font-weight:600'}));
+  const t=el('table');const inputs={};
+  hdr.forEach(c=>{
+    if(isWorkCol(c))return;
+    const v=p.r[c];
+    if(edit){const i=el('input',{value:v});inputs[c]=i;t.append(el('tr',{},[el('td',{textContent:c}),el('td',{},[i])]))}
+    else if(String(v).trim()!==''&&c!==hl&&c!==hn)t.append(el('tr',{},[el('td',{textContent:c}),el('td',{textContent:v})]));
+  });
+  root.append(t);
+  if(!edit)root.append(stageLine(p));
+  const row=el('div',{className:'row'});
+  if(edit){
+    row.append(el('button',{textContent:'💾 Сохранить',onclick:()=>{
+      const oldId=pid(p);
+      hdr.forEach(c=>{if(!inputs[c])return;let v=inputs[c].value;if(c===hl||c===hn){const n=num(v);if(n==null)return;v=n}p.r[c]=v});
+      remapEdge(oldId,pid(p));
+      p.m.setLatLng([p.r[hl],p.r[hn]]);save();draw(false);
+    }}),el('button',{className:'gray',textContent:'Отмена',onclick:()=>p.m.setPopupContent(popupEl(p,false))}));
+  }else{
+    const la=p.r[hl],lo=p.r[hn];
+    row.append(
+      el('button',{textContent:'🏗 Работы',onclick:()=>p.m.setPopupContent(workEl(p))}),
+      el('button',{textContent:'✏️ Изменить',onclick:()=>p.m.setPopupContent(popupEl(p,true))}),
+      el('button',{className:'gray',textContent:'📍 Переместить',onclick:()=>{target=p;setMode('move','Кликните по карте — новое положение опоры')}}),
+      el('button',{className:'red',textContent:'🗑 Удалить',onclick:()=>{if(confirm('Удалить опору?')){poles=poles.filter(x=>x!==p);dropEdges(pid(p));save();draw(false)}}}));
+    const nav=el('div',{className:'row'});
+    [['Яндекс',`https://yandex.ru/maps/?rtext=~${la},${lo}&rtt=auto`],['Google',`https://www.google.com/maps/dir/?api=1&destination=${la},${lo}`],['2ГИС',`https://2gis.ru/routeSearch/rsType/car/to/${lo},${la}`]]
+      .forEach(([n,h])=>nav.append(el('a',{textContent:n,href:h,target:'_blank'})));
+    root.append(row,nav);return root;
+  }
+  root.append(row);return root;
+}
+
+// ---------- режимы карты ----------
+const cont=map.getContainer();
+const COARSE=matchMedia('(pointer:coarse)').matches;
+const COLORS=['#e11d48','#2563eb','#16a34a','#f59e0b','#111827','#9333ea'];
+const annotGroup=L.layerGroup().addTo(map),tmpLayer=L.layerGroup().addTo(map);
+let annots=[],drawColor=COLORS[0],tmpPts=[],fpts=null;
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const btn=(t,f)=>el('button',{textContent:t,onclick:f,style:'margin-left:8px'});
+const len=pts=>pts.reduce((s,p,i)=>i?s+L.latLng(pts[i-1]).distanceTo(L.latLng(p)):0,0);
+const fmt=m=>m<1000?Math.round(m)+' м':(m/1000).toFixed(2)+' км';
+
+function setMode(m,text){
+  if(mode==='line'||mode==='free'||mode==='edge'){tmpLayer.clearLayers();tmpPts=[];fpts=null;edgeFrom=null}
+  mode=m;const hb=$('hint');hb.hidden=!m;hb.replaceChildren(text||'');
+  if(m==='line')hb.append(btn('↩ Точка',()=>{tmpPts.pop();updateTmp()}),btn('✓ Готово',finishLine));
+  if(m)hb.append(btn('✕',()=>setMode(null)));
+  cont.classList.toggle('crosshair',!!m&&m!=='free');
+  const f=m==='free';
+  ['dragging','touchZoom','doubleClickZoom'].forEach(k=>map[k][f?'disable':'enable']());
+  cont.style.touchAction=f?'none':'';
+  $('markBox').hidden=m!=='mark';
+  map.closePopup();
+}
+map.on('popupopen',()=>{if(mode)map.closePopup()});
+$('add').onclick=()=>setMode('add','Коснитесь карты, где стоит новая опора');
+$('bNote').onclick=()=>setMode('note','Коснитесь места для пометки');
+$('bLine').onclick=()=>setMode('line','Ставьте точки касанием (можно на опорах), затем «Готово»');
+$('bFree').onclick=()=>setMode('free','Рисуйте пальцем или стилусом');
+$('pen').onchange=e=>drawColor=e.target.value;
+document.addEventListener('keydown',e=>{if(e.key==='Escape')setMode(null)});
+window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue=''}});
+
+function mapClick(ll,pole){
+  if(!mode)return;
+  if(mode==='edge'){edgeClick(pole);return}
+  if(mode==='mark'){markClick(pole);return}
+  const {lat,lng}=ll;
+  if(mode==='move'){const oldId=pid(target);target.r[hl]=+lat.toFixed(6);target.r[hn]=+lng.toFixed(6);remapEdge(oldId,pid(target));save();setMode(null);draw(false);target.m.openPopup()}
+  else if(mode==='add'){
+    const r={};hdr.forEach(c=>r[c]='');r[hl]=+lat.toFixed(6);r[hn]=+lng.toFixed(6);
+    if(hdr.includes('Название'))r['Название']='Стандартная';
+    const p={r};poles.push(p);setMode(null);draw(false);
+    p.m.setPopupContent(popupEl(p,true));p.m.openPopup();save();
+  }else if(mode==='note'){
+    const a={type:'note',color:drawColor,text:'',pts:[[+lat.toFixed(6),+lng.toFixed(6)]]};
+    annots.push(a);setMode(null);renderAnnots();save();
+    L.popup({maxWidth:300}).setLatLng(ll).setContent(annotEl(a)).openOn(map);
+  }else if(mode==='line'){
+    tmpPts.push(pole?[pole.r[hl],pole.r[hn]]:[+lat.toFixed(6),+lng.toFixed(6)]);updateTmp();
+  }
+}
+map.on('click',e=>mapClick(e.latlng));
+
+function updateTmp(){
+  tmpLayer.clearLayers();
+  L.polyline(tmpPts,{color:drawColor,weight:5,dashArray:'6 6'}).addTo(tmpLayer);
+  tmpPts.forEach(p=>L.circleMarker(p,{radius:6,color:drawColor,fillOpacity:1}).addTo(tmpLayer));
+}
+function commit(pts){annots.push({type:'line',color:drawColor,text:'',pts});renderAnnots();save()}
+function finishLine(){if(tmpPts.length>1)commit(tmpPts.slice());setMode(null)}
+
+// рисование от руки (палец / стилус / мышь)
+let freeLine=null;
+cont.addEventListener('pointerdown',e=>{
+  if(mode!=='free')return;e.preventDefault();
+  fpts=[map.mouseEventToLatLng(e)];
+  freeLine=L.polyline(fpts,{color:drawColor,weight:5}).addTo(tmpLayer);
+  cont.setPointerCapture&&cont.setPointerCapture(e.pointerId);
+},true);
+cont.addEventListener('pointermove',e=>{
+  if(mode!=='free'||!fpts)return;
+  const ll=map.mouseEventToLatLng(e),last=fpts[fpts.length-1];
+  if(map.latLngToContainerPoint(ll).distanceTo(map.latLngToContainerPoint(last))<4)return;
+  fpts.push(ll);freeLine.setLatLngs(fpts);
+},true);
+const endFree=()=>{
+  if(mode!=='free'||!fpts)return;
+  if(fpts.length>1)commit(fpts.map(p=>[+p.lat.toFixed(6),+p.lng.toFixed(6)]));
+  tmpLayer.clearLayers();fpts=null;freeLine=null;
+};
+cont.addEventListener('pointerup',endFree,true);
+cont.addEventListener('pointercancel',endFree,true);
+
+// ---------- пометки и линии ----------
+function renderAnnots(){
+  annotGroup.clearLayers();
+  annots.forEach(a=>{
+    let l;
+    if(a.type==='note')l=L.marker(a.pts[0],{icon:L.divIcon({className:'',iconSize:null,iconAnchor:[14,36],
+      html:`<div class="note" style="border-color:${a.color}"><span>📌</span> ${esc(a.text)}</div>`})});
+    else{
+      l=L.polyline(a.pts,{color:a.color,weight:COARSE?7:4,opacity:.9});
+      if(a.text)l.bindTooltip(esc(a.text),{permanent:true,direction:'center',className:'ltip'});
+    }
+    l.on('click',e=>{
+      if(mode){L.DomEvent.stopPropagation(e);mapClick(e.latlng);return}
+      L.popup({maxWidth:300}).setLatLng(e.latlng).setContent(annotEl(a)).openOn(map);
+    });
+    annotGroup.addLayer(l);
+  });
+}
+function annotEl(a){
+  const root=el('div',{className:'pop'});
+  if(a.type==='line')root.append(el('div',{textContent:'Длина: '+fmt(len(a.pts))}));
+  const ta=el('input',{value:a.text,placeholder:a.type==='note'?'Текст пометки':'Подпись к линии'});
+  root.append(ta);
+  let col=a.color;const cs=el('div',{className:'row'});
+  COLORS.forEach(c=>cs.append(el('button',{style:`background:${c};width:36px;height:36px;border:${c===col?'3px solid #000':'1px solid #999'}`,
+    onclick:ev=>{col=c;[...cs.children].forEach(b=>b.style.border='1px solid #999');ev.target.style.border='3px solid #000'}})));
+  root.append(cs,el('div',{className:'row'},[
+    el('button',{textContent:'💾 Сохранить',onclick:()=>{a.text=ta.value;a.color=col;map.closePopup();renderAnnots();save()}}),
+    el('button',{className:'red',textContent:'🗑 Удалить',onclick:()=>{annots=annots.filter(x=>x!==a);map.closePopup();renderAnnots();save()}})]));
+  return root;
+}
+function putAnnots0(){
+  if(!annots.length&&!wb.SheetNames.includes('Пометки'))return;
+  const rows=annots.map(a=>{
+    let pts=a.pts;while(pts.length*18>30000)pts=pts.filter((_,i)=>i%2===0||i===pts.length-1);
+    return {'Тип':a.type==='note'?'пометка':'линия','Цвет':a.color,'Текст':a.text,'Координаты':pts.map(p=>p[0].toFixed(6)+','+p[1].toFixed(6)).join(';')};
+  });
+  const ws=XLSX.utils.json_to_sheet(rows,{header:['Тип','Цвет','Текст','Координаты']});
+  if(wb.SheetNames.includes('Пометки'))wb.Sheets['Пометки']=ws;else XLSX.utils.book_append_sheet(wb,ws,'Пометки');
+}
+// ---------- схема СИП по ТП ----------
+let sipOn=false,sipSheet=false,sipList=[];const sipHidden=new Set(),sipHue={};
+const sipLayer=L.layerGroup().addTo(map);
+const sipKey=p=>String(p.r['Тип метки']==null?'':p.r['Тип метки']).toLowerCase().replace(/\s+/g,'');
+const sipColor=p=>sipHue[sipKey(p)]||'#888';
+const pd=(a,b)=>L.latLng(a.r[hl],a.r[hn]).distanceTo([b.r[hl],b.r[hn]]);
+const pn=p=>String(p.r['Описание']||'?');
+function computeSip(list){
+  const max=+$('span').value||100,g={};
+  [...new Set(poles.map(sipKey).filter(Boolean))].sort().forEach((k,i)=>sipHue[k]=`hsl(${(i*137.5)%360},70%,42%)`);
+  if(manualEdges)return manualGroups(list);
+  list.forEach(p=>{const k=sipKey(p);if(k)(g[k]=g[k]||[]).push(p)});
+  return Object.keys(g).sort().map(k=>{
+    const P=g[k],n=P.length,edges=[],inT=Array(n).fill(false),best=Array(n).fill(Infinity),from=Array(n).fill(-1);
+    best[0]=0;
+    for(let s=0;s<n;s++){
+      let u=-1;for(let j=0;j<n;j++)if(!inT[j]&&(u<0||best[j]<best[u]))u=j;
+      inT[u]=true;
+      if(from[u]>=0&&best[u]<=max)edges.push([P[from[u]],P[u],best[u]]);
+      for(let j=0;j<n;j++)if(!inT[j]){const d=pd(P[u],P[j]);if(d<best[j]){best[j]=d;from[j]=u}}
+    }
+    return {key:k,name:String(P[0].r['Тип метки']).trim().replace(/\s+/g,' '),color:sipHue[k],poles:P,edges,len:edges.reduce((s,e)=>s+e[2],0)};
+  });
+}
+function renderSip(list){
+  sipLayer.clearLayers();const panel=$('sip');
+  if(!sipOn){panel.hidden=true;return}
+  sipList=list;$('bAuto').hidden=!manualEdges;const data=computeSip(list);
+  data.forEach(g=>{
+    if(sipHidden.has(g.key))return;
+    g.edges.forEach(([a,b,d])=>L.polyline([[a.r[hl],a.r[hn]],[b.r[hl],b.r[hn]]],{color:g.color,weight:COARSE?5:3,opacity:.9})
+      .bindTooltip(Math.round(d)+' м',{permanent:true,direction:'top',offset:[0,-2],className:'sip-len'})
+      .bindPopup(()=>edgePopup(a,b,d,g)).addTo(sipLayer));
+  });
+  group.eachLayer(l=>l.bringToFront&&l.bringToFront());updLbl();
+  const total=data.reduce((s,g)=>s+g.len,0);
+  panel.hidden=false;
+  panel.replaceChildren(el('b',{textContent:`Схема СИП${manualEdges?' (вручную)':''}: ${data.length} ТП, ${fmt(total)}`}),
+    ...data.map(g=>el('div',{style:`cursor:pointer;padding:4px 0;opacity:${sipHidden.has(g.key)?.35:1}`,
+      onclick:()=>{sipHidden.has(g.key)?sipHidden.delete(g.key):sipHidden.add(g.key);renderSip(sipList)}},
+      [el('i',{style:`background:${g.color}`}),`${g.name} — ${g.poles.length} оп., ${fmt(g.len)}`])),
+    el('div',{className:'row'},[
+      el('button',{className:'gray',textContent:'Показать все',onclick:()=>{sipHidden.clear();renderSip(sipList)}}),
+      el('button',{textContent:'📋 В Excel',onclick:()=>{sipSheet=true;save()}})]));
+}
+$('bSip').onclick=()=>{
+  if(!hdr.includes('Тип метки'))return alert('Нужен столбец «Тип метки» с номером ТП');
+  sipOn=!sipOn;$('spanBox').hidden=!sipOn;$('bSip').style.outline=sipOn?'3px solid #fff':'';draw(false);
+};
+$('span').onchange=()=>draw(false);
+function putSip(){
+  const rows=[];
+  computeSip(poles).forEach(g=>g.edges.forEach(([a,b,d])=>rows.push({'ТП':g.name,'От опоры':pid(a),'До опоры':pid(b),'Длина, м':Math.round(d)})));
+  const ws=XLSX.utils.json_to_sheet(rows,{header:['ТП','От опоры','До опоры','Длина, м']});
+  if(wb.SheetNames.includes('Схема СИП'))wb.Sheets['Схема СИП']=ws;else XLSX.utils.book_append_sheet(wb,ws,'Схема СИП');
+}
+function putAnnots(){putAnnots0();if(sipSheet)putSip()}
+
+// ---------- отмена / возврат изменений ----------
+const snap=()=>JSON.stringify({p:poles.map(p=>p.r),a:annots,e:manualEdges});
+function pushHist(){
+  const s=snap();if(s===hist[hist.length-1])return;
+  hist.push(s);if(hist.length>31)hist.shift();redo=[];updUndo();
+}
+function updUndo(){
+  $('bUndo').disabled=hist.length<2;$('bRedo').disabled=!redo.length;
+  $('bUndo').textContent='↩ Отменить'+(hist.length>1?` (${hist.length-1})`:'');
+  $('bRedo').textContent='↪ Вернуть'+(redo.length?` (${redo.length})`:'');
+}
+function restore(s){
+  const o=JSON.parse(s);poles=o.p.map(r=>({r}));annots=o.a;manualEdges=o.e||null;
+  setMode(null);draw(false);renderAnnots();updUndo();save(true);
+}
+function undo(){if(hist.length<2)return;redo.push(hist.pop());restore(hist[hist.length-1])}
+function redoIt(){if(!redo.length)return;const s=redo.pop();hist.push(s);restore(s)}
+$('bUndo').onclick=undo;$('bRedo').onclick=redoIt;
+document.addEventListener('keydown',e=>{
+  if(!(e.ctrlKey||e.metaKey)||['INPUT','TEXTAREA'].includes(e.target.tagName))return;
+  const k=e.key.toLowerCase();
+  if(k==='z'&&!e.shiftKey){e.preventDefault();undo()}
+  else if(k==='y'||(k==='z'&&e.shiftKey)){e.preventDefault();redoIt()}
+});
+
+// ---------- ближайшая опора ----------
+let nearP=null,nearD=0;const nearLayer=L.layerGroup().addTo(map);
+$('bNear').onclick=()=>{
+  if(!poles.length)return;
+  if(!navigator.geolocation)return alert('Геолокация недоступна в этом браузере');
+  status('Определяю местоположение…','warn');
+  navigator.geolocation.getCurrentPosition(pos=>{
+    const here=L.latLng(pos.coords.latitude,pos.coords.longitude);
+    let best=null,d=Infinity;
+    poles.forEach(p=>{if(!p.m||!group.hasLayer(p.m))return;const x=here.distanceTo([p.r[hl],p.r[hn]]);if(x<d){d=x;best=p}});
+    if(!best)return status('На карте нет опор','err');
+    nearP=best;nearD=d;nearLayer.clearLayers();
+    const bp=[best.r[hl],best.r[hn]];
+    if(pos.coords.accuracy)L.circle(here,{radius:pos.coords.accuracy,weight:1,color:'#2563eb',fillOpacity:.08,interactive:false}).addTo(nearLayer);
+    L.polyline([here,bp],{color:'#2563eb',weight:3,dashArray:'6 6',interactive:false}).addTo(nearLayer);
+    L.circleMarker(bp,{radius:20,color:'#2563eb',weight:3,fill:false,interactive:false}).addTo(nearLayer);
+    L.circleMarker(here,{radius:8,color:'#fff',weight:3,fillColor:'#2563eb',fillOpacity:1}).bindTooltip('Вы здесь').addTo(nearLayer);
+    map.fitBounds(L.latLngBounds([here,bp]),{padding:[80,80],maxZoom:19,animate:false});
+    best.m.openPopup();
+    status('Ближайшая опора: '+Math.round(d)+' м','ok');
+  },()=>status('Нет доступа к геолокации — разрешите её в браузере','err'),{enableHighAccuracy:true,timeout:15000});
+};
+
+// подписи длин пролётов: видны при достаточном масштабе
+function updLbl(){cont.classList.toggle('hide-len',!$('lenLbl').checked||map.getZoom()<17)}
+$('lenLbl').onchange=updLbl;map.on('zoomend',updLbl);
+
+// ---------- ручная правка схемы СИП ----------
+let manualEdges=null,edgeFrom=null;
+const pid=p=>String(p.r['Описание']||'').trim()||`${p.r[hl]},${p.r[hn]}`;
+function manualGroups(list){
+  const byId=new Map(poles.map(p=>[pid(p),p])),inList=new Set(list),g={};
+  list.forEach(p=>{const k=sipKey(p);if(k)(g[k]=g[k]||{key:k,name:String(p.r['Тип метки']).trim().replace(/\s+/g,' '),color:sipHue[k],poles:[],edges:[],len:0}).poles.push(p)});
+  manualEdges.forEach(([x,y])=>{
+    const a=byId.get(x),b=byId.get(y);if(!a||!b||!inList.has(a)||!inList.has(b))return;
+    const k=sipKey(a);if(!g[k])return;const d=pd(a,b);g[k].edges.push([a,b,d]);g[k].len+=d;
+  });
+  return Object.keys(g).sort().map(k=>g[k]);
+}
+function freezeSip(){
+  if(manualEdges)return;
+  const data=computeSip(poles);manualEdges=[];
+  data.forEach(g=>g.edges.forEach(([a,b])=>manualEdges.push([pid(a),pid(b)])));sipSheet=true;
+}
+const samePair=(e,x,y)=>(e[0]===x&&e[1]===y)||(e[0]===y&&e[1]===x);
+function addEdge(a,b){
+  freezeSip();const x=pid(a),y=pid(b);
+  if(!manualEdges.some(e=>samePair(e,x,y)))manualEdges.push([x,y]);
+  save();draw(false);
+}
+function removeEdge(a,b){
+  freezeSip();const x=pid(a),y=pid(b);
+  manualEdges=manualEdges.filter(e=>!samePair(e,x,y));save();draw(false);
+}
+function remapEdge(o,n){if(manualEdges&&o!==n)manualEdges=manualEdges.map(e=>e.map(v=>v===o?n:v))}
+function dropEdges(id){if(manualEdges)manualEdges=manualEdges.filter(e=>!e.includes(id))}
+function edgePopup(a,b,d,g){
+  return el('div',{className:'pop'},[el('div',{textContent:`${g.name}: ${pn(a)} → ${pn(b)}, ${Math.round(d)} м`}),
+    el('div',{className:'row'},[el('button',{className:'red',textContent:'🗑 Убрать связь',onclick:()=>{map.closePopup();removeEdge(a,b)}})])]);
+}
+function edgeClick(p){
+  if(!p)return;
+  if(edgeFrom===p)edgeFrom=null;
+  else if(!edgeFrom)edgeFrom=p;
+  else{const a=edgeFrom;edgeFrom=p;addEdge(a,p)}
+  tmpLayer.clearLayers();
+  if(edgeFrom)L.circleMarker([edgeFrom.r[hl],edgeFrom.r[hn]],{radius:20,color:'#111',weight:3,fill:false,dashArray:'4 4',interactive:false}).addTo(tmpLayer);
+}
+$('bEdge').onclick=()=>setMode('edge','Коснитесь двух опор — между ними появится линия СИП. Следующая опора продолжит цепочку');
+$('bAuto').onclick=()=>{if(confirm('Вернуть автоматическую схему? Ручные правки будут потеряны.')){manualEdges=null;save();draw(false)}};
+// ---------- учёт работ: закладные, бетон, опоры, монтаж + отчёт ----------
+const STAGES=[{name:'Бурение котлована',color:'#92400e'},{name:'Закладные',color:'#eab308'},{name:'Бетон',color:'#f97316'},{name:'Установка опоры',color:'#2563eb'},{name:'Монтаж',color:'#16a34a'}];
+const dc=s=>s.name+': дата',oc=s=>s.name+': описание';
+const WCOLS=STAGES.flatMap(s=>[dc(s),oc(s)]);
+const isWorkCol=c=>WCOLS.includes(c);
+const today=()=>new Date(Date.now()-new Date().getTimezoneOffset()*6e4).toISOString().slice(0,10);
+function normDate(v){
+  if(v===''||v==null)return '';
+  if(typeof v==='number'&&v>20000)return new Date(Math.round((v-25569)*864e5)).toISOString().slice(0,10);
+  const s=String(v).trim();let m;
+  if(/^\d{4}-\d{2}-\d{2}/.test(s))return s.slice(0,10);
+  if(m=s.match(/^(\d{1,2})[.\/](\d{1,2})[.\/](\d{4})$/))return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+  return s;
+}
+const stageDate=(p,s)=>normDate(p.r[dc(s)]);
+const fmtDate=d=>d?String(d).split('-').reverse().join('.'):'';
+const curStage=p=>{let r=-1;STAGES.forEach((s,i)=>{if(stageDate(p,s))r=i});return r};
+const stageColor=p=>{const i=curStage(p);return i<0?'#9ca3af':STAGES[i].color};
+function stageLegend(list){
+  const n=Array(STAGES.length+1).fill(0);list.forEach(p=>n[curStage(p)+1]++);
+  const row=(c,t,k)=>`<div><i style="background:${c}"></i>${t} (${k})</div>`;
+  return '<b>Этап работ (последний выполненный)</b>'+row('#9ca3af','Не начато',n[0])+STAGES.map((s,i)=>row(s.color,s.name,n[i+1])).join('');
+}
+function stageLine(p){
+  return el('div',{style:'font-size:12px;margin:4px 0'},STAGES.map(s=>{
+    const d=stageDate(p,s);
+    return el('div',{textContent:`${d?'✓':'○'} ${s.name}: ${d?fmtDate(d):'—'}${p.r[oc(s)]?' — '+p.r[oc(s)]:''}`,style:`color:${d?s.color:'#888'};font-weight:${d?600:400}`});
+  }));
+}
+function workEl(p){
+  const root=el('div',{className:'pop'},[el('b',{textContent:'Работы · '+pn(p)})]);
+  const f=STAGES.map(s=>{
+    const d=el('input',{type:'date',value:stageDate(p,s),style:'flex:1;width:auto'});
+    const t=el('input',{value:p.r[oc(s)]||'',placeholder:'Описание работ'});
+    root.append(el('div',{style:`margin-top:8px;padding-left:6px;border-left:6px solid ${s.color}`},[
+      el('div',{textContent:s.name,style:'font-weight:600'}),
+      el('div',{className:'row'},[d,el('button',{className:'gray',textContent:'Сегодня',onclick:()=>d.value=today()}),el('button',{className:'gray',textContent:'✕',onclick:()=>d.value=''})]),t]));
+    return [s,d,t];
+  });
+  root.append(el('div',{className:'row'},[
+    el('button',{textContent:'💾 Сохранить',onclick:()=>{f.forEach(([s,d,t])=>{p.r[dc(s)]=d.value;p.r[oc(s)]=t.value});save();draw(false);p.m.openPopup()}}),
+    el('button',{className:'gray',textContent:'Отмена',onclick:()=>p.m.setPopupContent(popupEl(p,false))})]));
+  return root;
+}
+// быстрая отметка: коснулись опоры — этап выполнен (повторно — снять)
+$('stageSel').innerHTML=STAGES.map((s,i)=>`<option value="${i}">${s.name}</option>`).join('');
+$('markDate').value=today();
+function markClick(p){
+  if(!p)return;
+  const s=STAGES[+$('stageSel').value];
+  p.r[dc(s)]=stageDate(p,s)?'':($('markDate').value||today());
+  save();draw(false);
+}
+$('bMark').onclick=()=>{$('colorBy').value='@stage';draw(false);setMode('mark','Коснитесь опор: этап отмечается выполненным, повторное касание снимает отметку')};
+
+// отчёт
+function repData(from,to){
+  const up=d=>d&&(!to||d<=to),inP=d=>d&&(!from||d>=from)&&(!to||d<=to);
+  const sum=STAGES.map(s=>({s,per:poles.filter(p=>inP(stageDate(p,s))).length,tot:poles.filter(p=>up(stageDate(p,s))).length}));
+  const g={};
+  poles.forEach(p=>{
+    const k=sipKey(p)||'—',o=g[k]=g[k]||{name:String(p.r['Тип метки']||'—').trim().replace(/\s+/g,' '),n:0,c:STAGES.map(()=>0)};
+    o.n++;STAGES.forEach((s,i)=>{if(up(stageDate(p,s)))o.c[i]++});
+  });
+  const log=[];
+  poles.forEach(p=>STAGES.forEach(s=>{const d=stageDate(p,s);if(inP(d))log.push({d,pole:pn(p),tp:String(p.r['Тип метки']||'').trim(),stage:s.name,desc:String(p.r[oc(s)]||'')})}));
+  log.sort((a,b)=>a.d.localeCompare(b.d)||a.pole.localeCompare(b.pole,'ru',{numeric:true}));
+  return {n:poles.length,sum,tp:Object.keys(g).sort().map(k=>g[k]),log};
+}
+const perText=()=>{const f=$('repFrom').value,t=$('repTo').value;return f||t?`${fmtDate(f)||'…'} — ${fmtDate(t)||'…'}`:'за всё время'};
+function renderReport(){
+  const d=repData($('repFrom').value,$('repTo').value);
+  const th=a=>'<tr>'+a.map(x=>`<th>${esc(x)}</th>`).join('')+'</tr>',td=a=>'<tr>'+a.map(x=>`<td>${esc(x)}</td>`).join('')+'</tr>';
+  $('repBody').innerHTML=`<h2>Отчёт о выполненных работах</h2><p>Объект: опоры освещения, Сортавала, этап 1<br>Период: ${perText()}<br>Сформирован: ${fmtDate(today())}</p>
+  <h3>Сводка по этапам</h3><table>${th(['Этап','За период','Всего выполнено','Всего опор','%'])}${d.sum.map(x=>td([x.s.name,x.per,x.tot,d.n,d.n?Math.round(x.tot*100/d.n)+'%':''])).join('')}</table>
+  <h3>По ТП (выполнено на конец периода / опор)</h3><table>${th(['ТП','Опор',...STAGES.map(s=>s.name)])}${d.tp.map(g=>td([g.name,g.n,...g.c.map(c=>c+' / '+g.n)])).join('')}</table>
+  <h3>Журнал работ (${d.log.length})</h3><table>${th(['Дата','Опора','ТП','Работа','Описание'])}${d.log.map(r=>td([fmtDate(r.d),r.pole,r.tp,r.stage,r.desc])).join('')}</table>`;
+  return d;
+}
+function putReport(){
+  const d=renderReport();
+  const aoa=[['Отчёт о выполненных работах'],['Период',perText()],['Сформирован',fmtDate(today())],[],
+    ['Сводка по этапам'],['Этап','За период','Всего выполнено','Всего опор','%'],
+    ...d.sum.map(x=>[x.s.name,x.per,x.tot,d.n,d.n?Math.round(x.tot*100/d.n)/100:'']),[],
+    ['По ТП (выполнено на конец периода)'],['ТП','Опор',...STAGES.map(s=>s.name)],
+    ...d.tp.map(g=>[g.name,g.n,...g.c]),[],
+    ['Журнал работ'],['Дата','Опора','ТП','Работа','Описание'],
+    ...d.log.map(r=>[fmtDate(r.d),r.pole,r.tp,r.stage,r.desc])];
+  const ws=XLSX.utils.aoa_to_sheet(aoa);ws['!cols']=[{wch:28},{wch:16},{wch:18},{wch:22},{wch:50}];
+  const nm='Отчёт о работах';
+  if(wb.SheetNames.includes(nm))wb.Sheets[nm]=ws;else XLSX.utils.book_append_sheet(wb,ws,nm);
+}
+$('bRep').onclick=()=>{renderReport();$('report').hidden=false};
+$('repFrom').onchange=$('repTo').onchange=renderReport;
+$('repClose').onclick=()=>$('report').hidden=true;
+$('repPrint').onclick=()=>window.print();
+$('repXls').onclick=()=>{putReport();save();status('Отчёт записан на лист «Отчёт о работах»','ok')};
+
+// ---------- резервная копия правок (iOS выгружает вкладки из памяти) ----------
+function backup(){try{localStorage.setItem('opory_backup',JSON.stringify({t:Date.now(),f:fileName,s:snap()}))}catch(e){}}
+function clearBackup(){try{localStorage.removeItem('opory_backup')}catch(e){}}
+function checkBackup(){
+  if(handle)return;
+  try{
+    const b=JSON.parse(localStorage.getItem('opory_backup')||'null');
+    if(!b||b.f!==fileName||b.s===snap())return;
+    if(confirm('Найдены несохранённые правки от '+new Date(b.t).toLocaleString('ru')+'. Восстановить?')){restore(b.s);pushHist()}else clearBackup();
+  }catch(e){}
+}
+</script>
+</body>
+</html>
